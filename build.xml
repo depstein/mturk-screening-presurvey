@@ -1,0 +1,237 @@
+<?xml version="1.0"?>
+<!--
+  Copyright 2007-2012 Amazon Technologies, Inc.
+ 
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at:
+ 
+  http://aws.amazon.com/apache2.0
+ 
+  This file is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES
+  OR CONDITIONS OF ANY KIND, either express or implied. See the
+  License for the specific language governing permissions and
+  limitations under the License.
+--> 
+<project name="MTurkJavaSDK" default="help" basedir=".">
+
+  <property file="build.properties" />
+  <property name="release.name" value="${sdk.name}-${major.version}.${minor.version}"/>
+
+  <property name="package.service.name" value="com.amazonaws.mturk.requester"/>
+  <property name="package.dataschema.name" value="com.amazonaws.mturk.dataschema"/>
+  <property name="output.dir" location="build"/>
+  <property name="lib.dir" location="${output.dir}/lib"/>
+
+  <property name="stub.classes.dir" location="${output.dir}/private/classes/${requester.service.name}"/>
+  <property name="stub.src.dir" location="${output.dir}/private/sources/${requester.service.name}"/>
+  <property name="stub.jar" value="${lib.dir}/${requester.service.name}.jar"/>
+  <property name="dataschema.classes.dir" location="${output.dir}/private/classes/${requester.dataschema.name}"/>
+  <property name="dataschema.src.dir" location="${output.dir}/private/sources/${requester.dataschema.name}"/>
+  <property name="dataschema.jar" value="${lib.dir}/${requester.dataschema.name}.jar"/>
+  <property name="sdk.classes.dir" location="${output.dir}/private/classes/${sdk.name}"/>
+  <property name="sdk.test.classes.dir" location="${output.dir}/private/classes/${sdk.name}/test"/>
+  <property name="sdk.src.dir" value="src"/>
+  <property name="sdk.test.dir" value="test"/>
+  <property name="sdk.jar" value="${lib.dir}/${sdk.name}.jar"/>
+  <property name="sdk.test.jar" value="${lib.dir}/${sdk.name}-test.jar"/>
+  <property name="code.src.dir" value="code"/>
+  <property name="code.classes.dir" location="${output.dir}/private/classes/${code.src.dir}"/>
+
+  <property name="wsdl.location" value="etc/wsdl/${wsdl.date}/AWSMechanicalTurkRequester.wsdl"/>
+
+  <property name="dataschema.location" value="${etc.dir}/schema/${dataschema.version}/QuestionFormAnswers.xsd"/>
+
+  <property name="third-party.lib.dir" value="lib/third-party"/>
+  
+  <path id="build.deps.classpath">
+    <!-- Make sure Xerces comes before jaxme. -->
+    <fileset dir="${third-party.lib.dir}" includes="xerces*/*.jar"/>
+    <fileset dir="${third-party.lib.dir}" includes="**/*.jar" excludes="xerces*/*.jar"/>
+  </path>
+
+  <path id="build.classpath">
+    <path refid="build.deps.classpath"/>
+    <path location="${dataschema.jar}"/>
+    <path location="${stub.jar}"/>
+  </path>
+
+  <path id="build.code.classpath">
+    <path refid="build.classpath"/>
+    <pathelement location="${sdk.jar}"/>
+    <path refid="dist.classpath"/>
+  </path>
+
+  <path id="dist.classpath">
+    <fileset dir="lib">
+      <include name="${requester.service.name}.jar"/>
+      <include name="${requester.dataschema.name}.jar"/>
+      <include name="${sdk.name}.jar"/>
+    </fileset>
+  </path>
+
+  <path id="code.classpath">
+    <path refid="build.classpath"/>
+    <path location="${sdk.jar}"/>
+    <path refid="dist.classpath"/>
+    <path path="${code.classes.dir}" />
+  </path>
+
+  <taskdef name="xjc" classname="org.apache.ws.jaxme.generator.XJCTask">
+    <classpath>
+      <path refid="build.deps.classpath" />
+    </classpath>
+  </taskdef>
+
+  <target name="check-dataschema-jar">
+    <uptodate property="dataschema-uptodate" srcfile="${dataschema.location}" targetfile="${dataschema.jar}"/>
+  </target>
+
+  <target name="dataschema-jar"
+          description="Build Jar containing the jaxme generated classes"
+          depends="check-dataschema-jar"
+          unless="dataschema-uptodate">
+
+    <mkdir dir="${dataschema.src.dir}"/>
+    <mkdir dir="${dataschema.classes.dir}"/>
+
+    <echo message="generating dataschema sources" />
+    <xjc target="${dataschema.src.dir}"
+         package="${package.dataschema.name}"
+         schema="${dataschema.location}">
+      <produces dir="${dataschema.src.dir}" includes="**/*" />
+    </xjc>
+
+    <echo message="compiling dataschema generated sources" />
+    <javac srcdir="${dataschema.src.dir}" destdir="${dataschema.classes.dir}" source="1.5" target="1.5" includeantruntime="false">
+      <classpath refid="build.deps.classpath"/>
+    </javac>
+
+    <copy toDir="${dataschema.classes.dir}">
+      <fileset dir="${dataschema.src.dir}">
+        <include name="**/jaxb.properties"/>
+        <include name="**/Configuration.xml"/>
+      </fileset>
+    </copy>
+
+    <mkdir dir="${lib.dir}"/>
+    <echo message="Creating dataschema jar"/>
+    <jar destfile="${dataschema.jar}">
+      <fileset dir="${dataschema.classes.dir}" includes="**/*"/>
+      <fileset dir="${dataschema.src.dir}" includes="**/*.java"/>
+      <!-- Note: The notice file is different for the jars than the distributable. -->
+      <fileset dir="${sdk.src.dir}" includes="NOTICE"/>
+      <fileset dir="." includes="LICENSE"/>
+    </jar>
+  </target>
+	
+  <target name="check-wsdl-jar">
+    <uptodate property="wsdl-uptodate" srcfile="${wsdl.location}" targetfile="${stub.jar}"/>
+  </target>
+
+  <target name="wsdl-jar"
+	  description="Creates the jar containing Axis generated stubs "
+	  depends="check-wsdl-jar"
+          unless="wsdl-uptodate">
+
+    <mkdir dir="${stub.src.dir}"/>
+    <mkdir dir="${stub.classes.dir}"/>
+
+    <echo message="Generating Axis stubs...." />
+    <java classname="org.apache.axis.wsdl.WSDL2Java" fork="true">
+      <arg line="-W '${wsdl.location}' --package ${package.service.name} --output '${stub.src.dir}'"/>
+      <classpath refid="build.deps.classpath"/>
+    </java>
+
+    <echo message="Compiling Axis generated stubs..." />
+    <javac srcdir="${stub.src.dir}" destdir="${stub.classes.dir}" source="1.5" target="1.5">
+      <classpath refid="build.deps.classpath"/>
+    </javac>
+
+    <mkdir dir="${lib.dir}"/>
+
+    <echo message="Creating axis jar " />
+    <jar destfile="${stub.jar}" >
+      <fileset dir="${stub.classes.dir}" includes="**/*.class"/>
+      <fileset dir="${stub.src.dir}" includes="**/*.java"/>
+      <!-- Note: The notice file is different for the jars than the distributable. -->
+      <fileset dir="${sdk.src.dir}" includes="NOTICE"/>
+      <fileset dir="." includes="LICENSE"/>
+    </jar>
+  </target>
+
+  <target name="compile-sdk" depends="wsdl-jar,dataschema-jar" description="Compiles SDK sources">
+    <mkdir dir="${sdk.classes.dir}"/>
+    <echo message="Compiling SDK source files..." />
+    <javac srcdir="${sdk.src.dir}" destdir="${sdk.classes.dir}" source="1.5" target="1.5" debug="on">
+      <classpath refid="build.classpath"/>
+    </javac>
+  </target>
+
+  <target name="compile-code" description="Compile code application source files">
+    <echo message="Compiling the code java source files..." />
+    <mkdir dir="${code.classes.dir}"/>
+    <javac destdir="${code.classes.dir}" debug="on" includeantruntime="false">
+      <src path="${code.src.dir}" />
+      <classpath refid="build.code.classpath"/>
+    </javac>
+  </target>
+
+  <target name="screener" depends="compile-code" description="Run the screener">
+    <echo message="Running the screener..." />
+    <java dir="${code.src.dir}/screener/" classname="screener.ScreenerQuestion" fork="true">
+      <classpath refid="code.classpath"/>
+    </java>
+  </target>
+
+  <target name="qualifier" depends="compile-code" description="Qualify people for the full survey">
+    <echo message="Qualifying people..." />
+    <java dir="${code.src.dir}/qualifier/" classname="qualifier.QualifyScreenerRespondents" fork="true">
+      <classpath refid="code.classpath"/>
+    </java>
+  </target>
+
+  <target name="full" depends="compile-code" description="Run the full survey">
+    <echo message="Running the full survey..." />
+    <java dir="${code.src.dir}/full/" classname="full.FullSurvey" fork="true">
+      <classpath refid="code.classpath"/>
+    </java>
+  </target>
+
+  <target name="responses" depends="compile-code" description="Pay the full survey">
+    <echo message="Paying the full survey respondents..." />
+    <java dir="${code.src.dir}/responses/" classname="responses.Responses" fork="true">
+      <classpath refid="code.classpath"/>
+    </java>
+  </target>
+
+  <target name="unix">
+    <antcall target="createTempDist"/>
+    <property name="tar.filename" value="${dist.dir}/temp.tar"/>
+    <!-- convert crlfs to unix-->
+    <fixcrlf srcdir="${temp.dir}" eol="unix" excludes="**/*.jar"/>
+
+    <tar destfile="${tar.filename}">
+      <tarfileset dir="${temp.dir}" mode="777"/>
+    </tar>
+    <gzip destfile="${dist.dir}/${release.name}.tar.gz" src="${tar.filename}"/>
+    <delete file="${tar.filename}"/>
+    <delete dir="${temp.dir}"/>
+  </target>
+
+  <target name="windows">
+    <antcall target="createTempDist"/>
+    <!-- convert crlfs to dos-->
+    <fixcrlf srcdir="${temp.dir}" eol="dos" excludes="**/*.jar"/>
+    <zip destfile="${dist.dir}/${release.name}.zip" basedir="${temp.dir}"/>
+    <delete dir="${temp.dir}"/>
+  </target>
+
+  <target name="clean" description="Deletes all the generated artifacts.">
+    <delete dir="${output.dir}" />
+    <delete dir="${doc.dir}" />
+    <delete dir="${dist.dir}" />
+  </target>
+
+</project>
+
